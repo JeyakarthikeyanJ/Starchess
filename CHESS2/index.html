@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Star Chess</title>
+<meta name="description" content="Play, analyse and review chess games with real Stockfish 16 NNUE evaluation, accurate move classification and accuracy scores.">
+
+<meta http-equiv="Content-Security-Policy" content="default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval' data: blob:; worker-src * 'unsafe-inline' 'unsafe-eval' data: blob:; style-src * 'unsafe-inline'; font-src * data:; img-src * data: blob:; connect-src * data: blob:;">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Montserrat:wght@600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+<link rel="icon" type="image/x-icon" href="favicon.ico" />
+<style>
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.modal-overlay.hidden {
+  display: none !important;
+}
+.modal-card {
+  background: #262421;
+  border: 1px solid #3c3934;
+  border-radius: 12px;
+  padding: 28px 32px;
+  width: 300px;
+  text-align: center;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+  position: relative;
+  color: #ffffff;
+}
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  background: none;
+  border: none;
+  color: #8b8987;
+  font-size: 22px;
+  cursor: pointer;
+}
+.modal-icon { font-size: 44px; margin-bottom: 10px; }
+.modal-card h2 { margin: 0 0 6px 0; font-size: 22px; font-weight: 700; }
+.modal-card p { margin: 0 0 20px 0; color: #bab8b6; font-size: 14px; }
+.modal-actions { display: flex; gap: 10px; }
+.modal-actions .btn {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-primary { background: #81b64c; color: #fff; }
+.btn-secondary { background: #363431; color: #bab8b6; }
+</style>
+</head>
+<body>
+
+<main class="layout">
+
+  <!-- ============ BOARD COLUMN ============ -->
+  <section class="board-col">
+
+    <div class="player-card" id="playerTop">
+      <div class="pc-avatar" id="pcAvatarTop">♛</div>
+      <div class="pc-meta">
+        <div class="pc-name" id="pcNameTop">Black</div>
+        <div class="pc-captured" id="pcCapturedTop"></div>
+      </div>
+      <div class="pc-right">
+        <span class="pc-acc" id="pcAccTop" hidden></span>
+      </div>
+    </div>
+
+    <div class="board-stage">
+      <div class="eval-bar" id="evalBar" title="Engine evaluation">
+        <div class="eval-fill" id="evalFill"></div>
+        <div class="eval-mid"></div>
+        <span class="eval-num eval-num-bottom" id="evalNum">0.0</span>
+      </div>
+      <div class="board-holder">
+        <div id="board"></div>
+        <div class="board-overlay" id="boardOverlay" hidden>
+          <div class="ov-card">
+            <div class="ov-title" id="ovTitle">Game over</div>
+            <div class="ov-sub" id="ovSub"></div>
+            <div class="ov-actions">
+              <button class="btn btn-green" id="ovReview">Game Review</button>
+              <button class="btn btn-ghost" id="ovNew">New Game</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="player-card" id="playerBottom">
+      <div class="pc-avatar" id="pcAvatarBottom">♕</div>
+      <div class="pc-meta">
+        <div class="pc-name" id="pcNameBottom">White</div>
+        <div class="pc-captured" id="pcCapturedBottom"></div>
+      </div>
+      <div class="pc-right">
+        <span class="pc-acc" id="pcAccBottom" hidden></span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="side-col">
+    <div class="panel">
+       
+       <div class="sidebar-header">
+  <a class="brand" href="#" aria-label="Chess Review home" style="text-decoration: none; display: flex; align-items: center; gap: 8px;">
+    <svg class="brand-mark" width="28" height="28" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+      <rect width="32" height="32" rx="7" fill="#81b64c"/>
+      <path d="M11.2 24.5h9.6l-1.1-5.3 1.9-2.9-2.9-1 1-2.9L16 8.2l-3.7 4.2 1 2.9-2.9 1 1.9 2.9z" fill="#262421"/>
+    </svg>
+    <div class="header-logo">
+      <span class="logo-text">Star<span class="logo-highlight">Chess</span></span>
+    </div>
+  </a>
+  <div id="engineChip" class="engine-chip loading">
+    <span class="engine-dot"></span>
+    <span id="engineChipText">Stockfish 16</span>
+  </div>
+</div>
+    
+      <div class="panel-tabs">
+        <button class="ptab active" data-view="play">Play</button>
+        <button class="ptab" data-view="analysis">Analysis</button>
+        <button class="ptab" data-view="review">Review</button>
+      </div>
+
+      <!-- Persistent Sidebar Toolbar with Active Engine Controls -->
+      <div class="sidebar-tools">
+        <button class="tool-btn" id="btnFlip" title="Flip board">Flip</button>
+        <button class="tool-btn" id="btnCopyFEN" title="Copy FEN">FEN</button>
+        <button class="tool-btn" id="btnCopyPGN" title="Copy PGN">PGN</button>
+        <label class="mini-toggle" title="Show engine arrows">
+          <input type="checkbox" id="arrowToggle" checked><span></span>Arrows
+        </label>
+      </div>
+
+      <!-- ---------- PLAY ---------- -->
+      <div class="pane" data-pane="play">
+        <div class="field-row">
+          <div class="field">
+            <label for="modeSelect">Mode</label>
+            <select id="modeSelect">
+              <option value="pass" selected>Pass &amp; Play</option>
+              <option value="bot" >Play vs Bot</option>
+            </select>
+          </div>
+          <div class="field" id="colorField">
+            <label for="playerColorSelect">Play as</label>
+            <select id="playerColorSelect">
+              <option value="w" selected>White</option>
+              <option value="b">Black</option>
+              <option value="random">Random</option>
+            </select>
+          </div>
+        </div>
+        <div class="field" id="difficultyField">
+          <label for="difficultySelect">Bot strength</label>
+          <select id="difficultySelect">
+            <option value="1">Beginner · ~800</option>
+            <option value="2">Casual · ~1200</option>
+            <option value="3" selected>Intermediate · ~1600</option>
+            <option value="4">Advanced · ~2000</option>
+            <option value="5">Expert · ~2400</option>
+            <option value="6">Maximum</option>
+          </select>
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-green btn-block" id="btnNewGame">New Game</button>
+          <button class="btn btn-ghost" id="btnUndo">Undo</button>
+        </div>
+        <div class="load-row">
+          <input type="text" id="pgnFenInput" placeholder="Paste a PGN or FEN…" autocomplete="off">
+          <button class="btn btn-ghost" id="btnLoad">Load</button>
+        </div>
+      </div>
+
+      <!-- ---------- ANALYSIS ---------- -->
+      <div class="pane" data-pane="analysis" hidden>
+        <div class="eng-head">
+          <div class="eng-title">
+            <span id="engName">Stockfish</span>
+            <span class="eng-depth" id="engDepth">d --</span>
+          </div>
+          <div class="field inline">
+            <label for="linesSelect">Lines</label>
+            <select id="linesSelect">
+              <option value="1">1</option><option value="2">2</option>
+              <option value="3" selected>3</option><option value="4">4</option><option value="5">5</option>
+            </select>
+          </div>
+        </div>
+        <div class="pv-list" id="pvList">
+          <div class="pv-empty">Waiting for the engine…</div>
+        </div>
+        <div class="eng-foot">
+          <span id="engNodes">—</span>
+          <span id="engFen" class="eng-fen"></span>
+        </div>
+      </div>
+
+      <!-- ---------- REVIEW ---------- -->
+      <div class="pane pane-review" data-pane="review" hidden>
+
+        <div class="rv-state" id="rvIdle">
+          <div class="rv-hero">
+            <svg viewBox="0 0 24 24" width="34" height="34" fill="#81b64c" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 9.3 8 10 4.6-.7 8-5 8-10V6l-8-4zm-1 14-3.5-3.5 1.4-1.4L11 13.2l4.1-4.1 1.4 1.4L11 16z"/></svg>
+            <h2>Game Review</h2>
+            <p>Every position is evaluated by Stockfish 16 NNUE. You get real accuracy scores, move classifications and coach feedback.</p>
+          </div>
+          <div class="field">
+            <label for="reviewDepth">Analysis depth</label>
+            <select id="reviewDepth">
+              <option value="12">Fast · depth 12</option>
+              <option value="16" selected>Standard · depth 16</option>
+              <option value="18">Deep · depth 18</option>
+              <option value="20">Maximum · depth 20</option>
+            </select>
+          </div>
+          <button class="btn btn-green btn-block btn-lg" id="btnStartReview">Start Review</button>
+          <div class="rv-note" id="rvNote">Play or load a game first.</div>
+        </div>
+
+        <div class="rv-state" id="rvRunning" hidden>
+          <div class="rv-progress-wrap">
+            <div class="rv-ring" id="rvRing"><span id="rvPct">0%</span></div>
+            <div class="rv-progress-label" id="rvLabel">Preparing…</div>
+            <div class="rv-bar"><div class="rv-bar-fill" id="rvBarFill"></div></div>
+            <button class="btn btn-ghost btn-sm" id="btnCancelReview">Cancel</button>
+          </div>
+        </div>
+
+        <div class="rv-state rv-report" id="rvReport" hidden>
+
+          <div class="acc-head">
+            <div class="acc-side">
+              <div class="acc-chip white" id="accWhite">--</div>
+              <span>White</span>
+            </div>
+            <div class="acc-mid">
+              <span class="acc-mid-label">Accuracy</span>
+              <span class="acc-mid-eng" id="accEngine">Stockfish</span>
+            </div>
+            <div class="acc-side">
+              <div class="acc-chip black" id="accBlack">--</div>
+              <span>Black</span>
+            </div>
+          </div>
+
+          <div class="rv-row-2">
+            <div class="stat-box"><span class="sb-label">Est. rating</span><span class="sb-val" id="ratWhite">--</span></div>
+            <div class="stat-box"><span class="sb-label">Opening</span><span class="sb-val sb-small" id="rvOpening">—</span></div>
+            <div class="stat-box"><span class="sb-label">Est. rating</span><span class="sb-val" id="ratBlack">--</span></div>
+          </div>
+
+          <div class="graph-card">
+            <div class="graph-title">Evaluation</div>
+            <canvas id="evalGraph" height="120"></canvas>
+          </div>
+
+          <div class="brk-card" id="breakdown"></div>
+
+          <div class="moments-card">
+            <div class="moments-title">Key moments</div>
+            <div id="momentsList" class="moments-list"></div>
+          </div>
+
+          <button class="btn btn-ghost btn-block btn-sm" id="btnReviewAgain">Re-run review</button>
+        </div>
+      </div>
+
+      <!-- ---------- SHARED: coach + moves + stepper ---------- -->
+      <div class="coach-card" id="coachCard" hidden>
+        <div class="coach-top">
+          <span class="coach-badge" id="coachBadge">★</span>
+          <span class="coach-title" id="coachTitle">Move</span>
+          <span class="coach-eval" id="coachEval"></span>
+        </div>
+        <div class="coach-text" id="coachText"></div>
+        <div class="coach-alt" id="coachAlt" hidden></div>
+      </div>
+
+      <div class="moves-card">
+        <div class="moves-scroll" id="movesScroll">
+          <div class="moves-empty" id="movesEmpty">No moves yet.</div>
+          <div class="moves-grid" id="movesGrid"></div>
+        </div>
+        <div class="stepper">
+          <button class="step-btn" id="btnFirst" title="First move">&#171;</button>
+          <button class="step-btn" id="btnPrev" title="Previous move">&#8249;</button>
+          <button class="step-btn" id="btnNext" title="Next move">&#8250;</button>
+          <button class="step-btn" id="btnLast" title="Last move">&#187;</button>
+        </div>
+      </div>
+
+    </div>
+  </aside>
+</main>
+
+<!-- promotion picker -->
+<div class="modal" id="promoModal" hidden>
+  <div class="modal-card">
+    <h3>Promote to</h3>
+    <div class="promo-row" id="promoRow"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/openings.js"></script>
+<script src="js/board.js"></script>
+<script>
+      function showGameEndModal({ result, reason }) {
+  const modal = document.getElementById('game-end-modal');
+  const titleEl = document.getElementById('modal-title');
+  const reasonEl = document.getElementById('modal-reason');
+  const iconEl = document.getElementById('modal-icon');
+
+  if (result === 'white') {
+    iconEl.textContent = '🏆';
+    titleEl.textContent = 'White Wins!';
+  } else if (result === 'black') {
+    iconEl.textContent = '🏆';
+    titleEl.textContent = 'Black Wins!';
+  } else {
+    iconEl.textContent = '🤝';
+    titleEl.textContent = 'Draw';
+  }
+
+  reasonEl.textContent = `by ${reason}`;
+  modal.classList.remove('hidden');
+}
+
+function closeGameEndModal() {
+  document.getElementById('game-end-modal').classList.add('hidden');
+}
+
+function restartGame() {
+  closeGameEndModal();
+  // Trigger your existing new game / reset logic here
+  if (typeof startNewGame === 'function') startNewGame();
+}
+
+// Example usage integrated with chess.js instance:
+function checkGameStatus(chess) {
+  if (!chess.game_over()) return;
+
+  if (chess.in_checkmate()) {
+    const winner = chess.turn() === 'w' ? 'black' : 'white';
+    showGameEndModal({ result: winner, reason: 'Checkmate' });
+  } else if (chess.in_draw()) {
+    let reason = 'Draw';
+    if (chess.in_stalemate()) reason = 'Stalemate';
+    else if (chess.in_threefold_repetition()) reason = 'Repetition';
+    else if (chess.insufficient_material()) reason = 'Insufficient Material';
+    showGameEndModal({ result: 'draw', reason });
+  }
+}
+    </script>
+<script src="js/review.js"></script>
+<script src="js/app.js"></script>
+<script data-pplx-inline-edit>
+(function () {
+  if (window === window.top) return;
+
+  const allowedParentOrigins = ["https://www.perplexity.ai","https://perplexity.ai","https://testing.perplexity.ai","https://staging.perplexity.ai","https://*.preview.i.perplexity.ai","http://perplexity.localhost","http://localhost:1420","http://127.0.0.1:1420","http://localhost:3000","http://127.0.0.1:3000","http://localhost:5173","http://127.0.0.1:5173"];
+  const MAX_FONT_BYTES = 500 * 1024;
+  const MAX_TOTAL_FONT_BYTES = 2 * 1024 * 1024;
+  let scrollForwarding = false;
+  let scrollRaf = 0;
+  let trustedTopOrigin = null;
+
+  function matchesAllowedOrigin(origin) {
+    if (!origin) return false;
+    for (const entry of allowedParentOrigins) {
+      if (!entry.includes("*")) {
+        if (entry === origin) return true;
+        continue;
+      }
+      const pattern = new RegExp(
+        "^" +
+          entry.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^.]+") +
+          "$",
+      );
+      if (pattern.test(origin)) return true;
+    }
+    return false;
+  }
+
+  function getTrustedParentOrigin(event) {
+    const forwardedParentOrigin =
+      typeof event.data.parentOrigin === "string" ? event.data.parentOrigin : null;
+    const parentOrigin = event.origin === "null" ? forwardedParentOrigin : event.origin;
+    return matchesAllowedOrigin(parentOrigin) ? parentOrigin : null;
+  }
+
+  function postToTrustedTop(message) {
+    if (!trustedTopOrigin) return;
+    try {
+      window.top.postMessage(message, trustedTopOrigin);
+    } catch (_error) {}
+  }
+
+  function inlineAll(original, clone) {
+    if (original.nodeType !== 1 || clone.nodeType !== 1) return;
+
+    try {
+      const computedStyle = getComputedStyle(original);
+      const serialized = computedStyle.cssText;
+      if (serialized) {
+        clone.style.cssText = serialized;
+      } else {
+        const parts = new Array(computedStyle.length);
+        for (let index = 0; index < computedStyle.length; index += 1) {
+          const property = computedStyle[index];
+          parts[index] = `${property}:${computedStyle.getPropertyValue(property)};`;
+        }
+        clone.style.cssText = parts.join("");
+      }
+    } catch (_error) {}
+
+    const originalChildren = original.children;
+    const clonedChildren = clone.children;
+    for (
+      let index = 0;
+      index < originalChildren.length && index < clonedChildren.length;
+      index += 1
+    ) {
+      inlineAll(originalChildren[index], clonedChildren[index]);
+    }
+  }
+
+  function extractFontUrl(srcValue) {
+    const matches = [
+      ...srcValue.matchAll(
+        /url\(["']?([^"')]+)["']?\)(?:\s*format\(["']?([^"')]+)["']?\))?/gi,
+      ),
+    ];
+    if (matches.length === 0) return null;
+    const woff2 = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff2"));
+    if (woff2) return woff2[1];
+    const woff = matches.find((m) => m[2] && m[2].toLowerCase().includes("woff"));
+    if (woff) return woff[1];
+    return matches[0][1];
+  }
+
+  const fontDataUriCache = new Map();
+  const SRC_DECLARATION_RE = /src\s*:\s*[^;}]+/i;
+
+  async function fetchAsDataUri(url) {
+    if (fontDataUriCache.has(url)) return fontDataUriCache.get(url);
+    let dataUri = null;
+    try {
+      const response = await fetch(url, { mode: "cors", credentials: "omit" });
+      if (response.ok) {
+        const blob = await response.blob();
+        if (blob.size <= MAX_FONT_BYTES) {
+          dataUri = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () =>
+              resolve(typeof reader.result === "string" ? reader.result : null);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(blob);
+          });
+        }
+      }
+    } catch (_error) {
+      dataUri = null;
+    }
+    fontDataUriCache.set(url, dataUri);
+    return dataUri;
+  }
+
+  function collectFontFaceRuleTexts() {
+    const rules = [];
+    for (const sheet of document.styleSheets) {
+      let cssRules;
+      try {
+        cssRules = sheet.cssRules;
+      } catch (_error) {
+        continue;
+      }
+      if (!cssRules) continue;
+      for (const rule of cssRules) {
+        const cssText = rule.cssText || "";
+        if (cssText.startsWith("@font-face")) rules.push(cssText);
+      }
+    }
+    return rules;
+  }
+
+  async function buildInlinedFontCss() {
+    const ruleTexts = collectFontFaceRuleTexts();
+    if (ruleTexts.length === 0) return null;
+
+    const resolved = ruleTexts.map((cssText) => {
+      if (!SRC_DECLARATION_RE.test(cssText)) return null;
+      const srcMatch = cssText.match(/src\s*:\s*([^;}]+)[;}]/i);
+      if (!srcMatch) return null;
+      const url = extractFontUrl(srcMatch[1]);
+      if (!url) return null;
+      try {
+        return { cssText, url: new URL(url, document.baseURI).href };
+      } catch (_error) {
+        return null;
+      }
+    });
+
+    const dataUris = await Promise.all(
+      resolved.map((entry) => (entry ? fetchAsDataUri(entry.url) : Promise.resolve(null))),
+    );
+
+    const inlined = [];
+    let totalBytes = 0;
+    for (let index = 0; index < resolved.length; index += 1) {
+      const entry = resolved[index];
+      const dataUri = dataUris[index];
+      if (!entry || !dataUri) continue;
+      const approxBytes = dataUri.length * 0.75;
+      if (totalBytes + approxBytes > MAX_TOTAL_FONT_BYTES) break;
+      totalBytes += approxBytes;
+      inlined.push(entry.cssText.replace(SRC_DECLARATION_RE, `src: url("${dataUri}")`));
+    }
+    return inlined.length > 0 ? inlined.join("\n") : null;
+  }
+
+  function stripExternal(clone) {
+    const images = clone.querySelectorAll("img");
+    for (let index = 0; index < images.length; index += 1) {
+      const src = images[index].getAttribute("src");
+      if (src && !src.startsWith("data:")) images[index].removeAttribute("src");
+    }
+
+    const elements = clone.querySelectorAll("*");
+    for (let index = 0; index < elements.length; index += 1) {
+      const style = elements[index].style.cssText;
+      if (style && style.includes("url(")) {
+        elements[index].style.cssText = style.replace(
+          /url\(["']?(?!data:)[^)"']*["']?\)/gi,
+          "none",
+        );
+      }
+    }
+  }
+
+  function emitScroll() {
+    scrollRaf = 0;
+    if (!scrollForwarding) return;
+    postToTrustedTop({
+      type: "INLINE_EDIT_SCROLL",
+      scrollX: window.scrollX,
+      scrollY: window.scrollY,
+    });
+  }
+
+  window.addEventListener(
+    "scroll",
+    function () {
+      if (!scrollForwarding || scrollRaf) return;
+      scrollRaf = requestAnimationFrame(emitScroll);
+    },
+    { passive: true, capture: true },
+  );
+
+  async function handleCaptureRequest(event) {
+    const requestId = event.data.requestId;
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    function postResult(dataUrl) {
+      postToTrustedTop({
+        type: "INLINE_EDIT_SCREENSHOT_RESULT",
+        requestId,
+        dataUrl,
+        scrollX,
+        scrollY,
+      });
+    }
+
+    try {
+      if (document.fonts && document.fonts.ready) {
+        try {
+          await document.fonts.ready;
+        } catch (_error) {}
+      }
+
+      const clone = document.documentElement.cloneNode(true);
+      inlineAll(document.documentElement, clone);
+
+      const removedNodes = clone.querySelectorAll("script,link[rel=\"stylesheet\"],style");
+      for (let index = 0; index < removedNodes.length; index += 1) {
+        removedNodes[index].remove();
+      }
+
+      stripExternal(clone);
+
+      const inlinedFontCss = await buildInlinedFontCss();
+      if (inlinedFontCss) {
+        const styleEl = document.createElement("style");
+        styleEl.textContent = inlinedFontCss;
+        const head = clone.querySelector("head");
+        if (head) head.appendChild(styleEl);
+        else clone.insertBefore(styleEl, clone.firstChild);
+      }
+
+      const html = new XMLSerializer().serializeToString(clone);
+      const svg =
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">` +
+        '<foreignObject width="100%" height="100%">' +
+        `<div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;overflow:hidden">` +
+        `<div style="position:relative;left:-${scrollX}px;top:-${scrollY}px">` +
+        html +
+        "</div></div></foreignObject></svg>";
+      const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const image = new Image();
+      image.onload = function () {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(image, 0, 0);
+        postResult(canvas.toDataURL("image/png"));
+      };
+      image.onerror = function () {
+        postResult(null);
+      };
+      image.src = svgUrl;
+    } catch (_error) {
+      postResult(null);
+    }
+  }
+
+  window.addEventListener("message", function (event) {
+    if (!event.data) return;
+    if (event.source !== window.parent) return;
+
+    const trustedParentOrigin = getTrustedParentOrigin(event);
+    if (!trustedParentOrigin) return;
+    trustedTopOrigin = trustedParentOrigin;
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_START") {
+      scrollForwarding = true;
+      emitScroll();
+      return;
+    }
+
+    if (event.data.type === "INLINE_EDIT_SCROLL_STOP") {
+      scrollForwarding = false;
+      if (scrollRaf) cancelAnimationFrame(scrollRaf);
+      scrollRaf = 0;
+      return;
+    }
+
+    if (event.data.type !== "INLINE_EDIT_CAPTURE_REQUEST") return;
+
+    handleCaptureRequest(event);
+  });
+})();
+</script>
+<div id="game-end-modal" class="modal-overlay hidden">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeGameEndModal()">&times;</button>
+    <div class="modal-icon" id="modal-icon">🏆</div>
+    <h2 id="modal-title">White Wins!</h2>
+    <p id="modal-reason">by Checkmate</p>
+    <div class="modal-actions">
+      <button class="btn btn-primary" onclick="restartGame()">New Game</button>
+      <button class="btn btn-secondary" onclick="closeGameEndModal()">Review</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>
